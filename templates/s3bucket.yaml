@@ -81,7 +81,7 @@ Resources:
   S3BucketName:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Join ["/", ["/s3", !Ref S3Bucket, "name"]]
+      Name: !Join ["/", ["/s3", private, "name"]]
       Type: "String"
       Description: Name of bucket
       Value: !Ref S3Bucket
@@ -89,7 +89,7 @@ Resources:
   S3ARN:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Join ["/", ["/s3", !Ref S3Bucket, "arn"]]
+      Name: !Join ["/", ["/s3", private, "arn"]]
       Type: "String"
       Description: ARN of bucket
       Value: !GetAtt S3Bucket.Arn
