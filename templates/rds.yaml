@@ -1,0 +1,251 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Module-E-RDS"
+
+# yamllint disable rule:line-length
+######################################################################
+#  This template contains parameters and resources for MySQL RDS Database with Read Replica.
+#
+#
+#  List of resources created:
+#                           1. Database Subnet Group
+#                           2. Secret for the SQL database
+#                           4. MySQL Database security group
+#                           3. MySQL RDS Database
+#                           5. Read replica instance in different AZ
+#                           6. Database endpoint parameters
+#
+# Implementation resources
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-rds-dbsubnet-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-rds-database-instance.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
+#
+######################################################################
+
+Parameters:
+
+  Environment:
+    Type: String
+    AllowedValues:
+      - 'dev'
+      - 'qa'
+      - 'prod'
+
+  InstanceId:
+    Type: String
+    MinLength: '1'
+    MaxLength: '63'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must begin with a letter and must not end with a hyphen or contain two
+      consecutive hyphens.
+
+  DatabaseName:
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+
+  DatabaseUser:
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+  InstanceType:
+    Type: String
+    Default: "db.t2.micro"
+
+  StorageSize:
+    Type: Number
+    Default: "20"
+    MinValue: '20'
+    MaxValue: '100'
+    ConstraintDescription: must be between 20 and 100 GiB.
+
+  EngineType:
+    Type: String
+    Default: mysql
+
+  EngineVersion:
+    Type: String
+    Default: 8.0.16
+
+
+######################################################################
+# Resource creation
+######################################################################
+
+Resources:
+
+  ######################################################################
+  # Security Group
+  ######################################################################
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for database"
+      VpcId: '{{resolve:ssm:/vpc/id}}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '{{resolve:ssm:/vpc/subnet/private/application/a/cidr}}'
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '{{resolve:ssm:/vpc/subnet/private/application/b/cidr}}'
+# Maybe add ingress and egress rules? We currently dont know what we need.
+# TCP port 3306 ?
+# From what subnet? App or DB? Diagram says Memcached is the only thing communicating directly with DB.
+
+  ######################################################################
+  # Password secret
+  ######################################################################
+  SecretDBKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Join ["", ["MySecretForDB", !Ref DatabaseName]]
+      Description: "This secret has a dynamically generated secret password."
+      GenerateSecretString:
+#        SecretStringTemplate: !Join ["", ["'", '{"username":', '"', !Ref DatabaseUser, '"', "}'"]]
+        SecretStringTemplate: !Sub
+          - '{"username": "${DatabaseUser}"}'
+          - DatabaseUser: !Ref DatabaseUser
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+
+  SecretRDSInstanceAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref SecretDBKey
+      TargetId: !Ref DatabaseInstance
+      TargetType: AWS::RDS::DBInstance
+
+#  SecretDBKeyRotationSchedule:
+#    Type: AWS::SecretsManager::RotationSchedule
+#    Properties:
+#      SecretId: !Ref SecretDBKey
+#      RotationRules:
+#        Duration: 6h
+#        ScheduleExpression: 'rate(30 days)'
+#      HostedRotationLambda:
+# You must specify Transform: AWS::SecretsManager-2020-07-23 at the beginning of the CloudFormation template.
+#     https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_available-rotation-templates.html
+#     https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-rotationschedule.html
+#        RotationType: MySQLSingleUser
+#        RotationLambdaName:
+# SecretsManagerRotation
+# SecretsManagerRDSMySQLRotationSingleUser
+#        VpcSecurityGroupIds: !Ref DatabaseSecurityGroup
+#        VpcSubnetIds: !Join: [",", ["'{{resolve:ssm:/vpc/subnet/private/database/a/id}}'", "'{{resolve:ssm:/vpc/subnet/private/database/b/id}}'"]]
+
+
+  ######################################################################
+  # Data Subnet Group
+  ######################################################################
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName: "mysqlsubnetgroup"
+      DBSubnetGroupDescription: "subnetgroup for mysql db"
+      SubnetIds:
+        - '{{resolve:ssm:/vpc/subnet/private/database/a/id}}'
+        - '{{resolve:ssm:/vpc/subnet/private/database/b/id}}'
+
+
+  ######################################################################
+  # Database instance
+  ######################################################################
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref InstanceId
+      DBName: !Ref DatabaseName
+      DBInstanceClass: !Ref InstanceType
+      AllocatedStorage: !Ref StorageSize
+      Engine: !Ref EngineType
+      EngineVersion: !Ref EngineVersion
+      MasterUsername: !Ref DatabaseUser
+#      MasterUserPassword: !Join ["", ["'{{resolve:secretsmanager:", "MySecretForDB", !Ref DatabaseName, "}}'"]]
+      MasterUserPassword: !Join ["", ['{{resolve:secretsmanager:', !Ref SecretDBKey, ':SecretString:password}}']]
+# Or can we just !Ref SecretDBKey ? - that would return the ARN of the key.
+      StorageType: gp2
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+
+  ######################################################################
+  # Database read replica
+  ######################################################################
+  DatabaseReadReplicaInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: !Ref InstanceType
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      SourceDBInstanceIdentifier: !Ref DatabaseInstance
+# Don't set the BackupRetentionPeriod, DBName, MasterUsername, MasterUserPassword, and PreferredBackupWindow properties. The database attributes are inherited from the source DB instance, and backups are disabled for read replicas.
+
+
+  ######################################################################
+  # Database Endpoint parameters
+  ######################################################################
+  DBEndpointAddress:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/rds", "mysql", "main", "address"]]
+      Type: "String"
+      Description: Main DB endpoint
+      Value: !GetAtt DatabaseInstance.Endpoint.Address
+
+  DBEndpointPort:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/rds", "mysql", "main", "port"]]
+      Type: "String"
+      Description: Main DB endpoint
+      Value: !GetAtt DatabaseInstance.Endpoint.Port
+
+  DBReadReplicaEndpointAddress:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/rds", "mysql", "read", "address"]]
+      Type: "String"
+      Description: Main DB endpoint
+      Value: !GetAtt DatabaseReadReplicaInstance.Endpoint.Address
+
+  DBReadReplicaEndpointPort:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/rds", "mysql", "read", "port"]]
+      Type: "String"
+      Description: Main DB endpoint
+      Value: !GetAtt DatabaseReadReplicaInstance.Endpoint.Port
+
+  DatabaseSecurityGroupIDParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/ec2", "securitygroup", "db", "id"]]
+      Type: "String"
+      Description: DB Security group ID
+      Value: !Ref DatabaseSecurityGroup
+
+  DBName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/rds", "mysql", "main", "name"]]
+      Type: "String"
+      Description: Main DB Name
+      Value: !Ref DatabaseName
