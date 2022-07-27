@@ -1,0 +1,156 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Module-F-EFS"
+
+######################################################################
+#  This template contains parameters and resources for creating an Elastic File System.
+#
+#
+#  List of resources created:
+#                           1. EFS Security Group
+#                           2. Elastic File System
+#                           3. EFS Mount Points
+#                           3. Parameter store parameters
+#
+# Implementation resources
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-efs-filesystem.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-efs-mounttarget.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html
+#
+######################################################################
+
+Parameters:
+  Environment:
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Default: dev
+    Description: Environment
+    Type: String
+
+  Application:
+    Description: Application Name
+    Type: String
+
+  Encrypted:
+    AllowedValues:
+      - true
+      - false
+    Default: true
+    Description: EFS encryption enabled
+    Type: String
+
+######################################################################
+# Resource creation
+######################################################################
+
+Resources:
+
+  ######################################################################
+  # Security Group
+  ######################################################################
+
+  EFSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow nfs to mounttarget
+      VpcId: '{{resolve:ssm:/vpc/id}}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: '{{resolve:ssm:/vpc/subnet/private/application/a/cidr}}'
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: '{{resolve:ssm:/vpc/subnet/private/application/b/cidr}}'
+
+
+  ######################################################################
+  # Elastic File System
+  ######################################################################
+
+  FileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      Encrypted: !Ref Encrypted
+      FileSystemTags:
+        - Key: Name
+          Value: !Join ["-", [!Ref Application, !Ref Environment, "efs"]]
+
+
+  ######################################################################
+  # EFS Mount Targets
+  ######################################################################
+
+  MountTargetA:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: '{{resolve:ssm:/vpc/subnet/private/application/a/id}}'
+      SecurityGroups:
+        - !GetAtt EFSSecurityGroup.GroupId
+
+
+  MountTargetB:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: '{{resolve:ssm:/vpc/subnet/private/application/b/id}}'
+      SecurityGroups:
+        - !GetAtt EFSSecurityGroup.GroupId
+
+  ######################################################################
+  # Parameter store parameters
+  ######################################################################
+
+  EFSSecurityGroupIDParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/ec2", "securitygroup", "efs", "id"]]
+      Type: "String"
+      Description: EFS Security group ID
+      Value: !Ref EFSSecurityGroup
+
+  FileSystemIDParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/efs", "filesystem", "id"]]
+      Type: "String"
+      Description: EFS Filessystem ID
+      Value: !Ref FileSystem
+
+  MountTargetAIDParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/efs", "mounttarget", "a", "id"]]
+      Type: "String"
+      Description: EFS MountTargetA ID
+      Value: !Ref MountTargetA
+
+  MountTargetBIDParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/efs", "mounttarget", "b", "id"]]
+      Type: "String"
+      Description: EFS MountTargetB ID
+      Value: !Ref MountTargetB
+
+  MountTargetAIpParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/efs", "mounttarget", "a", "ip"]]
+      Type: "String"
+      Description: EFS MountTargetA ID
+      Value: !GetAtt  MountTargetA.IpAddress
+
+  MountTargetBIpParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Join ["/", ["/efs", "mounttarget", "b", "ip"]]
+      Type: "String"
+      Description: EFS MountTargetB ID
+      Value: !GetAtt  MountTargetB.IpAddress
