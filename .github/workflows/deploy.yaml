@@ -10,10 +10,6 @@ jobs:
   deploy:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-#     outputs:
-#       output1: ${{ steps.DNS.outputs.ALB }}
-#       output2: ${{ steps.DNS.outputs.S3DNS }}
-#       output3: ${{ steps.DNS.outputs.S3Name }}
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -103,7 +99,7 @@ jobs:
             DesiredInstances=2,
             AMI=/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2,
             SSLCertificateARN=arn:aws:acm:eu-central-1:735556469799:certificate/efcf013c-a3a1-4213-8991-c8e78ec35107,
-            CPUPolicyTargetValue=80
+            CPUPolicyTargetValue=80,
             WordpressUser=WordpressAdmin,
             WordpressEmail=admin@wordpress.com,
             WPDomainName=team4.nordcloudtap.com
