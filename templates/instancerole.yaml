@@ -1,0 +1,138 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Module-C-IAM Roles"
+
+######################################################################
+#  This template contains parameters and resources for creating an instance role.
+#  The role should be the standard EC2 role with additional managed policies of AmazonSSMManagedInstanceCore
+#  and  a custom policy that gives access to only the bucket defined with a parameter.
+#
+#  List of resources created:
+#                           1. Role
+#                           2. Instance Profile
+#                           3. Instance Profile Name parameter
+#                           4. Instance Profile Arn parameter
+#
+# Implementation resources
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
+#
+######################################################################
+
+
+Parameters:
+
+  AppName:
+    Type: String
+
+#  AppName2:
+#    Type: String
+
+#  InstanceProfileName:
+#    Type: String
+
+  Environment:
+    Type: String
+    AllowedValues:
+      - 'dev'
+      - 'qa'
+      - 'prod'
+
+######################################################################
+# Resource creation
+######################################################################
+
+Resources:
+
+  ######################################################################
+  # Instance role
+  ######################################################################
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy
+      Policies:
+        - PolicyName: s3access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource:
+#                  - '{{resolve:ssm:/s3/!Ref S3Bucket/arn}}'
+                  - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "public", "-", !Ref Environment, "/arn}}'"]]
+                  - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "private", "-", !Ref Environment, "/arn}}'"]]
+        - PolicyName: efsaccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource:
+                  - !Sub "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/'{{resolve:ssm:/efs/filesystem/id}}'"
+        - PolicyName: getsecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:MySecretForDBtestdb"
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+
+
+  ######################################################################
+  # Parameter store parameters
+  ######################################################################
+
+  InstanceProfileNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/iam", "instanceprofile", "name"]]
+      Type: "String"
+      Description: Name of Instance Profile
+      Value: !Ref InstanceProfile
+
+  InstanceProfileArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/iam", "instanceprofile", "arn"]]
+      Type: "String"
+      Description: ARN of Instance Profile
+      Value: !GetAtt InstanceProfile.Arn
+
+  InstanceRoleNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["/", ["/iam", "instancerole", "name"]]
+      Type: "String"
+      Description: Name of Instance Role
+      Value: !Ref InstanceRole
+
+  # InstanceRoleArnParameter:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Name: !Join ["/", ["/iam", "instancerole", "arn"]]
+  #     Type: "String"
+  #     Description: ARN of Instance Role
+  #     Value: !Ref InstanceRole.Arn
