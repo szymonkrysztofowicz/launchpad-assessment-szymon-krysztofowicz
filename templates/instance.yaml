@@ -368,7 +368,7 @@ Resources:
         ImageId: !Ref AMI
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
-          Arn: '{{resolve:ssm:/iam/instanceprofile/name}}'
+          Name: '{{resolve:ssm:/iam/instanceprofile/name}}'
         SecurityGroupIds:
           - !Ref InstanceSecurityGroup
         UserData:
