@@ -1,0 +1,455 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Module-D-LaunchTemplate-AutoScalingGroup-ApplicationLoadBalancer"
+# yamllint disable rule:line-length
+
+######################################################################
+#  This template contains parameters and resources for creating an Multi-AZ Auto Scaling Group
+#  and  Launch Template, Scaling Policies, Alarms and Life Cycle Hooks for the ASG.
+#  Application Load Balancer and Listener and Target Group for the ALB
+#  Security Groups for both ALB and ASG, DNS entry for ALB and SNS topic for ASG.
+#
+#
+#  List of resources created:
+#                           1. Load Balancer Security Grouo
+#                           2. Instance Security Group
+#                           3. Launch template
+#                           4. Application Load Balancer
+#                           5. Application Load Balancer Target Group
+#                           6. Application Load Balancer Listener
+#                           7. Auto Scaling Group
+#                           8. Scaling policies for Auto Scaling Group
+#                           9. Alarms for Auto Scaling Group
+#                           10. SNS topic for receiving scaling actions
+#                           11. Lifecycle hooks for scaling actions
+#                           12. DNS entry pointing to ALB
+#
+#
+# Implementation resources
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-launchtemplate.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-loadbalancer.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-targetgroup.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listener.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-as-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-as-policy.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cw-alarm.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-route53-recordsetgroup.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sns-topic.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-autoscaling-lifecyclehook.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
+#
+######################################################################
+
+Parameters:
+
+  AppName:
+    Type: String
+
+  Environment:
+    Type: String
+    AllowedValues:
+      - 'dev'
+      - 'qa'
+      - 'prod'
+
+  SSLCertificateARN:
+    Type: String
+
+  InstanceType:
+    Type: String
+
+  MinInstances:
+    Type: String
+
+  MaxInstances:
+    Type: String
+
+  DesiredInstances:
+    Type: String
+
+  AMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+
+  CPUPolicyTargetValue:
+    Type: String
+
+
+Resources:
+
+  #########################################################################
+  # Security groups
+  #########################################################################
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow HTTP and HTTPS to Load Balancer'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: name
+          Value: LoadBalancerSecurityGroup
+      VpcId: '{{resolve:ssm:/vpc/id}}'
+
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow HTTP to EC2 Instances'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: name
+          Value: InstanceSecurityGroup
+      VpcId: '{{resolve:ssm:/vpc/id}}'
+
+  #########################################################################
+  # Launch Template Configuration
+  #########################################################################
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          wordpress_install:
+            - install_cfn
+            - install_efs
+            - install_wordpress
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.LaunchTemplate.Metadata.AWS::CloudFormation::Init
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource LaunchTemplate '
+                  - '         --configsets wordpress_install '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_efs:
+          commands:
+            01_install_efs:
+              command: |
+                # Mount shared EFS
+                yum -y install amazon-efs-utils
+                AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+                AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
+                export AWS_DEFAULT_REGION=$AWSREGION
+                EFSID=$(aws ssm get-parameter --name "/efs/filesystem/id" | jq -r ".Parameter.Value")
+                EFSIPAZA=$(aws ssm get-parameter --name "/efs/mounttarget/a/ip" | jq -r ".Parameter.Value")
+                EFSIPAZB=$(aws ssm get-parameter --name "/efs/mounttarget/b/ip" | jq -r ".Parameter.Value")
+                # Determine which az
+                if [[ "$AZ" =~ 'a'$ ]]; then EFSIP=$EFSIPAZA; elif [[ "$AZ" =~ 'b'$ ]]; then EFSIP=$EFSIPAZB; else EFSIP="0.0.0.0"; fi
+                # Since DNS lookup of EFS does not work, will have to provide hosts entry for that
+                echo -e "$EFSIP\t$EFSID.efs.$AWSREGION.amazonaws.com\t# Shared EFS" >> /etc/hosts
+                mkdir -p /var/www/html
+                mount -t efs $EFSID /var/www/html
+                usermod -a -G apache ec2-user
+                chown -R ec2-user:apache /var/www/html
+                chmod 2775 /var/www/html && find /var/www/html -type d -exec sudo chmod 2775 {} \;
+                find /var/www/html -type f -exec sudo chmod 0664 {} \;
+                # Persist the volume in /etc/fstab so it gets mounted again
+                echo -e '$EFSID\t/var/www/html\tefs\t_netdev\t0 2' >> /etc/fstab
+#          files:
+#            /var/configfiles/EFS_mount.sh:
+#              source: 'https://testapp-520697913075-private-dev.s3.eu-central-1.amazonaws.com/EFS_mount.sh'
+        install_wordpress:
+          sources:
+            /var/www/html: 'http://wordpress.org/latest.tar.gz'
+          # files:
+          #   /tmp/create-wp-config:
+          #     content:  !Join
+          #       - ''
+          #       - - |
+          #           #!/bin/bash
+          #         - >
+          #           cp /var/www/html/wordpress/wp-config-sample.php
+          #           /var/www/html/wordpress/wp-config.php
+          #         - sed -i "s/'database_name_here'/'
+          #         - !Ref DBName
+          #         - |
+          #           '/g" wp-config.php
+          #         - sed -i "s/'username_here'/'
+          #         - !Ref DBUser
+          #         - |
+          #           '/g" wp-config.php
+          #         - sed -i "s/'password_here'/'
+          #         - !Ref DBPassword
+          #         - |
+          #           '/g" wp-config.php
+          #         - sed -i "s/'localhost'/'
+          #         - !GetAtt
+          #           - DBInstance
+          #           - Endpoint.Address
+          #         - |
+          #           '/g" wp-config.php
+          commands:
+            01_configure_wordpress:
+              command: |
+                curl -o /bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+                chmod +x /bin/wp
+                AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
+                export AWS_DEFAULT_REGION=$AWSREGION
+                DBNAME=$(aws ssm get-parameter --name "/rds/mysql/main/name" | jq -r ".Parameter.Value")
+                DBUSER=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]' )
+                DBPASS=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["password"]' )
+                DBENDPOINT=$(aws ssm get-parameter --name "/rds/mysql/main/address" | jq -r ".Parameter.Value")
+                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                sed -i "s/username_here/$DBUSER/g" wp-config.php
+                sed -i "s/database_name_here/$DBNAME/g" wp-config.php
+                sed -i "s/password_here/$DBPASS/g" wp-config.php
+                sed -i "s/localhost/$DBENDPOINT/g" wp-config.php
+                WP_ADMIN=admin
+                WP_PASSWORD=password
+                WP_EMAIL=szymon.krysztofowicz@nordcloud.com
+                LB_HOSTNAME=https://team4.nordcloudtap.com/
+                if ! $(wp core is-installed --allow-root); then
+                    wp core install --url="$LB_HOSTNAME" --title='Wordpress on AWS' --admin_user="$WP_ADMIN" --admin_password="$WP_PASSWORD" --admin_email="$WP_EMAIL" --allow-root
+                    chown -R apache:apache /var/www/html/wordpress
+                    chmod u+wrx /var/www/html/wordpress/wp-content/*
+                fi
+                ## Force HTMLS in wp-config.php
+                sed -i "/*.Add any custom values between this line and the.*/a /* SSL Settings */\ndefine(""'""FORCE_SSL_ADMIN""'"", true);\n \n/* Turn HTTPS ""'""on""'"" if HTTP_X_FORWARDED_PROTO matches ""'""https""'"" */\nif (strpos(""$""_SERVER[""'""HTTP_X_FORWARDED_PROTO""'""], ""'""https""'"") !== false) {\n    ""$""_SERVER[""'""HTTPS""'""] = ""'""on""'"";\n}" wp-config.php
+                ## create site config
+                cat <<EOF >/etc/httpd/conf.d/wordpress.conf
+                ServerName 127.0.0.1:80
+                DocumentRoot /var/www/html/wordpress
+                <Directory /var/www/html/wordpress>
+                  Options Indexes FollowSymLinks
+                  AllowOverride All
+                  Require all granted
+                </Directory>
+                EOF
+              cwd: /var/www/html/wordpress
+          services:
+            sysvinit:
+              httpd:
+                enabled: 'true'
+                ensureRunning: 'true'
+    Properties:
+      LaunchTemplateName: LaunchTemplate
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Name: '{{resolve:ssm:/iam/instanceprofile/name}}'
+        DisableApiTermination: false
+        ImageId: !Ref AMI
+        InstanceType: !Ref InstanceType
+#        KeyName: MyKeyPair
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/bin/bash
+              yum update -y
+              yum install -y amazon-linux-extras
+              yum install -y awslogs httpd mysql gcc-c++ jq php-mysqlnd.x86_64
+              amazon-linux-extras enable php7.4
+              yum clean metadata
+              yum install -y php php-{pear,cgi,common,curl,mbstring,gd,gettext,bcmath,json,xml,fpm,intl,zip,imap,devel,opcache}
+              #systemctl enable nfs-server.service
+              #yum install -y jq httpd php-mysqlnd php-cli
+              opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --region ${AWS::Region} --resource LaunchTemplate --configsets wordpress_install
+
+  #########################################################################
+  # Load Balancer Configuration
+  #########################################################################
+  AppElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      IpAddressType: ipv4
+      Name: !Join ["-", [!Ref AppName, !Ref Environment, "alb"]]
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - '{{resolve:ssm:/vpc/subnet/public/a/id}}'
+        - '{{resolve:ssm:/vpc/subnet/public/b/id}}'
+
+  AppElasticLoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: '{{resolve:ssm:/vpc/id}}'
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      Name: !Join ["-", [!GetAtt AppElasticLoadBalancer.LoadBalancerName, "targets"]]
+      Port: 80
+      Protocol: HTTP
+      ProtocolVersion: HTTP1
+
+  AppElasticLoadBalancerListener443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref SSLCertificateARN
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppElasticLoadBalancerTargetGroup
+      LoadBalancerArn: !Ref AppElasticLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+  AppElasticLoadBalancerListener80:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: 443
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+      LoadBalancerArn: !Ref AppElasticLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ########################################################################
+  # Auto Scaling Group and Scaling Policy
+  ########################################################################
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MaxSize: !Ref MaxInstances
+      MinSize: !Ref MinInstances
+      DesiredCapacity: !Ref DesiredInstances
+      VPCZoneIdentifier:
+        - '{{resolve:ssm:/vpc/subnet/private/application/a/id}}'
+        - '{{resolve:ssm:/vpc/subnet/private/application/b/id}}'
+      TargetGroupARNs:
+        - !Ref AppElasticLoadBalancerTargetGroup
+      NotificationConfigurations:
+        - TopicARN: !Ref SNSTopic
+          NotificationTypes:
+            - autoscaling:EC2_INSTANCE_LAUNCH
+            - autoscaling:EC2_INSTANCE_TERMINATE
+
+  AppTargetTrackingScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUPolicyTargetValue
+
+#  AppStepDownScalingPolicy:
+#    Type: AWS::AutoScaling::ScalingPolicy
+
+  #######################################################################
+  # Cloud Watch Alarms
+  #######################################################################
+  AppHighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: 'Alarm for CPU usage on AutoScalingGroup'
+      ActionsEnabled: false
+#      AlarmActions:   # Required when ActionsEnabled=True
+#        - !Ref SNSTopic
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AppAutoScalingGroup   # Logical name of an AWS::EC2::Instance resource - How do we make this for ASG?
+      ComparisonOperator: GreaterThanOrEqualToThreshold   # LessThanOrEqualToThreshold for low cpu
+      DatapointsToAlarm: '1'  # This is the M value in -- M out of N -- alarm
+      EvaluationPeriods: '3'  # This is the N value in -- M out of N -- alarm
+      Statistic: Average
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '60'
+      Threshold: !Ref CPUPolicyTargetValue
+# Copy this to LowCpuAlarm when complete.
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/quickref-cloudwatch.html
+#  AppLowCpuAlarm:
+#    Type: AWS::CloudWatch::Alarm
+
+  #######################################################################
+  # SNS Topic for receiving scaling notificetions
+  #######################################################################
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      FifoTopic: false
+      Subscription:
+        - Endpoint: "szymon.krysztofowicz@nordcloud.com"
+          Protocol: email
+      TopicName: !Join ["-", [!Ref AppName, "asgevent", "topic"]]
+  #######################################################################
+  # ASG Lifecycle hooks for scale actions
+  #######################################################################
+
+#  ScaleUpHook:
+#    AWS::AutoScaling::LifecycleHook
+
+#  ScaleDownHook:
+#    AWS::AutoScaling::LifecycleHook
+
+  #######################################################################
+  # DNS record pointing to loadbalancer
+  #######################################################################
+#   DNSRecord:
+#     Type: AWS::Route53::RecordSetGroup
+#     Properties:
+#       Comment: "Create records to redirect IPv4 traffic to ELB"
+#       HostedZoneId: Z10411603QOWZDGJ407SV
+#       RecordSets:
+#         - Name: team4.nordcloudtap.com.
+#           Type: A
+#           AliasTarget:
+#             EvaluateTargetHealth: false
+#             HostedZoneId: !GetAtt AppElasticLoadBalancer.CanonicalHostedZoneID
+#             DNSName: !GetAtt AppElasticLoadBalancer.DNSName
