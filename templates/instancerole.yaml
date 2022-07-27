@@ -47,8 +47,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: '*'
-                Resource:
-                  - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "private", "-", !Ref Environment, "/arn}}'"]]
+                Resource: '{{resolve:ssm:/s3/private/arn}}'
         - PolicyName: efsaccess
           PolicyDocument:
             Version: "2012-10-17"
