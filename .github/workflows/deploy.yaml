@@ -60,17 +60,7 @@ jobs:
             Application=testapp,
             Environment=dev,
             Encrypted=true
-          
-      - name: Deploy to AWS CloudFormation instancerole
-        uses: aws-actions/aws-cloudformation-github-deploy@v1
-        with:
-          name: assessment-instancerole-stack
-          template: templates/instancerole.yaml
-          no-fail-on-empty-changeset: "1"
-          parameter-overrides: >- 
-            AppName=testapp,
-            Environment=dev
-          
+
       - name: Deploy to AWS CloudFormation rds template
         uses: aws-actions/aws-cloudformation-github-deploy@v1
         with:
@@ -86,7 +76,17 @@ jobs:
             StorageSize=20,
             EngineType=mysql,
             EngineVersion=8.0.16
-          
+
+      - name: Deploy to AWS CloudFormation instancerole
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: assessment-instancerole-stack
+          template: templates/instancerole.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >- 
+            AppName=testapp,
+            Environment=dev
+                  
       - name: Deploy to AWS CloudFormation instance template
         id: instance-stack
         uses: aws-actions/aws-cloudformation-github-deploy@v1
