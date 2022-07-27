@@ -126,7 +126,7 @@ Resources:
     Type: AWS::EC2::LaunchTemplate
     Metadata:
       'AWS::CloudFormation::Init':
-configSets:
+        configSets:
           wordpress_install:
             - install_cfn
             - setup
