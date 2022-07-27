@@ -1,8 +1,10 @@
 ---
-
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Module-C-S3Bucket"
-
+# yamllint disable rule:line-length
+######################################################################
+# Parameters
+######################################################################
 Parameters:
 
   AppName:
@@ -33,19 +35,19 @@ Parameters:
       - 'prod'
 
 Conditions:
-
   IsEncrypted:
     !Equals [!Ref Encryption, 'enabled']
-
   IsPublic:
     !Equals [!Ref PublicAccess, 'enabled']
-
   IsVersioning:
     !Equals [!Ref Versioning, 'enabled']
-
+######################################################################
+# Resource creation
+######################################################################
 Resources:
-
+  ######################################################################
   # S3 BUCKET
+  ######################################################################
   S3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
@@ -73,7 +75,9 @@ Resources:
       Tags:
         - Key: name
           Value: !Ref AppName
-
+  ######################################################################
+  # Parameter store parameters
+  ######################################################################
   S3BucketName:
     Type: AWS::SSM::Parameter
     Properties:
@@ -89,4 +93,14 @@ Resources:
       Type: "String"
       Description: ARN of bucket
       Value: !GetAtt S3Bucket.Arn
-  
+######################################################################
+# Outputs
+######################################################################
+Outputs:
+  S3BucketPublicDNSName:
+    Description: The DNS Name of the S3 Public Bucket
+    Value: !GetAtt S3Bucket.RegionalDomainName
+
+  S3BucketName:
+    Description: The Name of the S3 Public
+    Value: !Ref S3Bucket 
