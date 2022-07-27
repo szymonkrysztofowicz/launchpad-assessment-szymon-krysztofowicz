@@ -75,7 +75,7 @@ Resources:
                 Action: '*'
                 Resource:
 #                  - '{{resolve:ssm:/s3/!Ref S3Bucket/arn}}'
-                  - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "public", "-", !Ref Environment, "/arn}}'"]]
+#                  - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "public", "-", !Ref Environment, "/arn}}'"]]
                   - !Join ["", ["'{{resolve:ssm:/s3/", !Ref AppName, "-", !Ref AWS::AccountId, "-", "private", "-", !Ref Environment, "/arn}}'"]]
         - PolicyName: efsaccess
           PolicyDocument:
