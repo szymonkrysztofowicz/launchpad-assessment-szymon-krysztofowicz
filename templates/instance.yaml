@@ -276,7 +276,7 @@ Resources:
                     wpemail=$(aws secretsmanager get-secret-value --secret-id "WordpressEmail" --output text --query SecretString --region "$AWSREGION" | jq -r '.["email"]')
                     export wpemail2=$wpemail
                     hostendpoint=$(aws ssm get-parameter --name "/rds/mysql/main/address" | jq -r ".Parameter.Value")
-                    s3bucketname=$(aws ssm get-parameter --name "/s3/testapp-735556469799-private-dev/name" --region "$AWSREGION"| jq -r ".Parameter.Value")
+                    s3bucketname=$(aws ssm get-parameter --name "/s3/private/name" --region "$AWSREGION"| jq -r ".Parameter.Value")
                     export bucketname=$s3bucketname
                     sed -i "s/database_name_here/$DBNAME/g" wp-config.php
                     sed -i "s/'username_here'/'$dbusername'/g" wp-config.php
@@ -410,7 +410,7 @@ Resources:
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MaxSize: !Ref MaxInstances
       MinSize: !Ref MinInstances
-      HealthCheckType: ELB
+#       HealthCheckType: ELB
       HealthCheckGracePeriod: 20
       TargetGroupARNs:
         - !Ref AppElasticLoadBalancerTargetGroup
