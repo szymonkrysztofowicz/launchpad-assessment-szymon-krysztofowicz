@@ -186,7 +186,7 @@ Resources:
                   - |
                     file = /var/log/cfn-init.log
                   - 'log_group_name = '
-                  - !Ref myLogGroup
+                  - !Ref LogGroup
                   - |+
                   - |
                     log_stream_name = {instance_id}/cfn-init.log
