@@ -232,7 +232,7 @@ Resources:
               yum install -y php php-{pear,cgi,common,curl,mbstring,gd,gettext,bcmath,json,xml,fpm,intl,zip,imap,devel,opcache}
               #systemctl enable nfs-server.service
               #yum install -y jq httpd php-mysqlnd php-cli
-              opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --region ${AWS::Region} --resource LaunchTemplate --configsets wordpress_install
+              /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --region ${AWS::Region} --resource LaunchTemplate --configsets wordpress_install
   #########################################################################
   # Load Balancer Configuration
   #########################################################################
