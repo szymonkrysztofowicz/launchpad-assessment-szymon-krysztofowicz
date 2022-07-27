@@ -304,6 +304,7 @@ Resources:
                     cd /var/www/html/wordpress/
                     AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
                     export AWS_DEFAULT_REGION=$AWSREGION
+                    DBNAME=$(aws ssm get-parameter --name "/rds/mysql/main/name" | jq -r ".Parameter.Value")
                     dbusername=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]')
                     dbpassword=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["password"]')
                     wpusername=$(aws secretsmanager get-secret-value --secret-id "WordpressPassword" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]')
@@ -315,7 +316,7 @@ Resources:
                     hostendpoint=$(aws ssm get-parameter --name "/rds/mysql/main/address" | jq -r ".Parameter.Value")
                     s3bucketname=$(aws ssm get-parameter --name "/s3/testapp-735556469799-private-dev/name" --region "$AWSREGION"| jq -r ".Parameter.Value")
                     export bucketname=$s3bucketname
-                    sed -i "s/'database_name_here'/'RDS'/g" wp-config.php
+                    sed -i "s/database_name_here/$DBNAME/g" wp-config.php
                     sed -i "s/'username_here'/'$dbusername'/g" wp-config.php
                     sed -i "s/'password_here'/'$dbpassword'/g" wp-config.php
                     sed -i "s/'localhost'/'$hostendpoint'/g" wp-config.php
