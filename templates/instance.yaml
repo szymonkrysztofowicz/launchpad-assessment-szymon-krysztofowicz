@@ -2,45 +2,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Module-D-LaunchTemplate-AutoScalingGroup-ApplicationLoadBalancer"
 # yamllint disable rule:line-length
-
 ######################################################################
-#  This template contains parameters and resources for creating an Multi-AZ Auto Scaling Group
-#  and  Launch Template, Scaling Policies, Alarms and Life Cycle Hooks for the ASG.
-#  Application Load Balancer and Listener and Target Group for the ALB
-#  Security Groups for both ALB and ASG, DNS entry for ALB and SNS topic for ASG.
-#
-#
-#  List of resources created:
-#                           1. Load Balancer Security Grouo
-#                           2. Instance Security Group
-#                           3. Launch template
-#                           4. Application Load Balancer
-#                           5. Application Load Balancer Target Group
-#                           6. Application Load Balancer Listener
-#                           7. Auto Scaling Group
-#                           8. Scaling policies for Auto Scaling Group
-#                           9. Alarms for Auto Scaling Group
-#                           10. SNS topic for receiving scaling actions
-#                           11. Lifecycle hooks for scaling actions
-#                           12. DNS entry pointing to ALB
-#
-#
-# Implementation resources
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-launchtemplate.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-loadbalancer.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-targetgroup.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listener.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-as-group.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-as-policy.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cw-alarm.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-route53-recordsetgroup.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sns-topic.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-autoscaling-lifecyclehook.html
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
-#
+# Parameters
 ######################################################################
-
 Parameters:
 
   AppName:
@@ -92,13 +56,13 @@ Parameters:
     AllowedPattern: ^$|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$
     Description: 'The main domain name of the WordPress site (e.g. example.com).'
     Type: String
-
+######################################################################
+# Resources creation
+######################################################################
 Resources:
-
   #########################################################################
   # Security groups
   #########################################################################
-
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -117,7 +81,6 @@ Resources:
           Value: LoadBalancerSecurityGroup
       VpcId: '{{resolve:ssm:/vpc/id}}'
 
-
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -132,14 +95,13 @@ Resources:
           Value: InstanceSecurityGroup
       VpcId: '{{resolve:ssm:/vpc/id}}'
 
-  myLogGroup: 
+  LogGroup: 
     Type: AWS::Logs::LogGroup
     Properties: 
       RetentionInDays: 7
   #########################################################################
   # Launch Template Configuration
   #########################################################################
-
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Metadata:
@@ -448,65 +410,101 @@ Resources:
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MaxSize: !Ref MaxInstances
       MinSize: !Ref MinInstances
-      DesiredCapacity: !Ref DesiredInstances
-      VPCZoneIdentifier:
-        - '{{resolve:ssm:/vpc/subnet/private/application/a/id}}'
-        - '{{resolve:ssm:/vpc/subnet/private/application/b/id}}'
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 20
       TargetGroupARNs:
         - !Ref AppElasticLoadBalancerTargetGroup
-      NotificationConfigurations:
-        - TopicARN: !Ref SNSTopic
-          NotificationTypes:
-            - autoscaling:EC2_INSTANCE_LAUNCH
-            - autoscaling:EC2_INSTANCE_TERMINATE
+      DesiredCapacity: !Ref DesiredInstances
+      VPCZoneIdentifier:   
+        - '{{resolve:ssm:/vpc/subnet/private/application/a/id}}'
+        - '{{resolve:ssm:/vpc/subnet/private/application/b/id}}'
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        WaitOnResourceSignals: false
+        PauseTime: PT5M
 
-  AppTargetTrackingScalingPolicy:
+  AppStepUpScalingPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
       AutoScalingGroupName: !Ref AppAutoScalingGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ASGAverageCPUUtilization
-        TargetValue: !Ref CPUPolicyTargetValue
+      PolicyType: StepScaling
+      AdjustmentType: ChangeInCapacity
+      MetricAggregationType: Average
+      EstimatedInstanceWarmup: 300
+      StepAdjustments:
+        -
+          MetricIntervalLowerBound: 0
+          MetricIntervalUpperBound: 10
+          ScalingAdjustment: 1
+        -
+          MetricIntervalLowerBound: 10
+          ScalingAdjustment: 2
 
-#  AppStepDownScalingPolicy:
-#    Type: AWS::AutoScaling::ScalingPolicy
-
+  AppStepDownScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      PolicyType: StepScaling
+      AdjustmentType: ChangeInCapacity
+      MetricAggregationType: Average
+      EstimatedInstanceWarmup: 60
+      StepAdjustments: 
+        - 
+          MetricIntervalLowerBound: -15
+          MetricIntervalUpperBound: 0
+          ScalingAdjustment: -1
+        - 
+          MetricIntervalUpperBound: -15
+          ScalingAdjustment: -2
   #######################################################################
   # Cloud Watch Alarms
   #######################################################################
   AppHighCpuAlarm:
     Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: 'Alarm for CPU usage on AutoScalingGroup'
-      ActionsEnabled: false
-#      AlarmActions:   # Required when ActionsEnabled=True
-#        - !Ref SNSTopic
+    Properties: 
+      
+      AlarmDescription: Scales up
+      MetricName: CPUUtilization
+      Statistic: Average
+      AlarmActions:
+        - !Ref AppStepUpScalingPolicy
+        - !Ref SNSTopic
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      Period: 240
+      Namespace: AWS/EC2
       Dimensions:
         - Name: AutoScalingGroupName
-          Value: !Ref AppAutoScalingGroup   # Logical name of an AWS::EC2::Instance resource - How do we make this for ASG?
-      ComparisonOperator: GreaterThanOrEqualToThreshold   # LessThanOrEqualToThreshold for low cpu
-      DatapointsToAlarm: '1'  # This is the M value in -- M out of N -- alarm
-      EvaluationPeriods: '3'  # This is the N value in -- M out of N -- alarm
-      Statistic: Average
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Period: '60'
-      Threshold: !Ref CPUPolicyTargetValue
-# Copy this to LowCpuAlarm when complete.
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/quickref-cloudwatch.html
-#  AppLowCpuAlarm:
-#    Type: AWS::CloudWatch::Alarm
+          Value:
+            Ref: AppAutoScalingGroup
 
+  AppLowCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scales down
+      MetricName: CPUUtilization
+      Statistic: Average
+      AlarmActions:
+        - !Ref AppStepDownScalingPolicy
+        - !Ref SNSTopic
+      Threshold: 60
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: 2
+      Period: 240
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value:
+            Ref: AppAutoScalingGroup
   #######################################################################
   # SNS Topic for receiving scaling notificetions
   #######################################################################
-
   SNSTopic:
     Type: AWS::SNS::Topic
     Properties:
-      FifoTopic: false
       Subscription:
         - Endpoint: "szymon.krysztofowicz@nordcloud.com"
           Protocol: email
@@ -514,14 +512,24 @@ Resources:
   #######################################################################
   # ASG Lifecycle hooks for scale actions
   #######################################################################
+  ScaleUpHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_LAUNCHING
+      HeartbeatTimeout: '60'
+      DefaultResult: CONTINUE
 
-#  ScaleUpHook:
-#    AWS::AutoScaling::LifecycleHook
-
-#  ScaleDownHook:
-#    AWS::AutoScaling::LifecycleHook
-
-
+  ScaleDownHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties: 
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      HeartbeatTimeout: '60'
+      DefaultResult: CONTINUE
+  #######################################################################
+  # WordPress Secrets
+  #######################################################################
   SecretWPKey:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -536,6 +544,7 @@ Resources:
         -
           Key: Name
           Value: Wordpress
+ 
   SecretWPEmail:
     Type: AWS::SecretsManager::Secret
     Properties:
