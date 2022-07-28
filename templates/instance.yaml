@@ -109,44 +109,133 @@ Resources:
         configSets:
           wordpress_install:
             - install_cfn
-            - install_efs
+            - setup
             - install_wordpress
+            - install_cwagent
+            - logs
+        install_cwagent:
+          commands:
+            1_cwagent: 
+              command: |
+                cd /opt
+                sudo su
+                sudo yum install -y amazon-cloudwatch-agent
+                sudo touch /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+                cd /opt/aws/amazon-cloudwatch-agent/etc
+                sudo chmod +x amazon-cloudwatch-agent.json
+                cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+                {
+                    "agent": {
+                    "metrics_collection_interval": 10,
+                    "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+                    },
+                    "metrics": {
+                    "namespace": "CWAgent/Assessment/EC2",
+                    "metrics_collected": {
+                        "mem": {
+                            "measurement": [
+                                {"name": "used_percent", "rename": "Memory used percent", "unit": "Megabytes"}
+                            ],
+                            "metrics_collection_interval": 60
+                        },
+                        "disk": {
+                            "resources": ["/", "/tmp"],
+                            "measurement": ["disk_used_percent"],
+                            "ignore_file_system_types": ["sysfs", "devtmpfs"]
+                        }
+                    },
+                    "append_dimensions": {
+                        "InstanceId": "\${aws:InstanceId}"
+                    },
+                    "aggregation_dimensions" : [["ImageId"]],
+                    "force_flush_interval" : 30
+                    }
+                }
+                EOF
+                sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+        setup:
+          commands:
+            1_efs: 
+              command: |
+                yum -y install amazon-efs-utils
+                yum -y install jq
+                yum -y install awslogs
+                AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+                AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
+                export AWS_DEFAULT_REGION=$AWSREGION
+                EFSID=$(aws ssm get-parameter --name "/efs/filesystem/id" | jq -r ".Parameter.Value")
+                EFSIPAZA=$(aws ssm get-parameter --name "/efs/mounttarget/a/ip" | jq -r ".Parameter.Value")
+                EFSIPAZB=$(aws ssm get-parameter --name "/efs/mounttarget/b/ip" | jq -r ".Parameter.Value")
+                if [[ "$AZ" =~ 'a'$ ]]; then EFSIP=$EFSIPAZA; elif [[ "$AZ" =~ 'b'$ ]]; then EFSIP=$EFSIPAZB; else EFSIP="0.0.0.0"; fi
+                echo -e "$EFSIP\t$EFSID.efs.$AWSREGION.amazonaws.com\t# Shared EFS" >> /etc/hosts
+                mkdir -p /var/www/html
+                echo -e "$EFSID\t/var/www/html\tefs\t_netdev\t0 2" >> /etc/fstab
+                echo -e "$EFSIP:/\t/data\tnfs4\trw,context=system_u:object_r:httpd_sys_content_t:s0,relatime,vers=4.1,rsize=1048576,wsize=1048576,namlen=255,hard,proto=tcp,timeo=600,retrans=2,sec=sys,local_lock=none\t0 2" >> /etc/fstab
+                mount -t efs -o tls,iam $EFSID /var/www/html
+        logs:
+          files:
+            /etc/awslogs/awslogs.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [general]
+                  - |
+                    state_file= /var/awslogs/state/agent-state
+                  - |
+                    [/var/log/cfn-init.log]
+                  - |
+                    file = /var/log/cfn-init.log
+                  - 'log_group_name = '
+                  - !Ref LogGroup
+                  - |+
+                  - |
+                    log_stream_name = {instance_id}/cfn-init.log
+                  - 'datetime_format = %d/%b/%Y:%H:%M:%S'
+              mode: '000400'
+              owner: root
+              group: root
+          commands:
+            01_create_state_directory:
+              command: mkdir -p /var/awslogs/state
+          services:
+            sysvinit:
+              awslogsd:
+                enabled": 'true'
+                ensureRunning: 'true'
+                files: /etc/awslogs/awslogs.conf
         install_cfn:
           files:
             /etc/cfn/cfn-hup.conf:
-              content: !Join
+              content: !Join 
                 - ''
                 - - |
                     [main]
                   - stack=
                   - !Ref 'AWS::StackId'
                   - |+
-
                   - region=
                   - !Ref 'AWS::Region'
                   - |+
-
               mode: '000400'
               owner: root
               group: root
             /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Join
+              content: !Join 
                 - ''
                 - - |
                     [cfn-auto-reloader-hook]
                   - |
                     triggers=post.update
                   - >
-                    path=Resources.LaunchTemplate.Metadata.AWS::CloudFormation::Init
+                    path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
                   - 'action=/opt/aws/bin/cfn-init -v '
                   - '         --stack '
                   - !Ref 'AWS::StackName'
-                  - '         --resource LaunchTemplate '
+                  - '         --resource LaunchConfig ' 
                   - '         --configsets wordpress_install '
                   - '         --region '
                   - !Ref 'AWS::Region'
                   - |+
-
               mode: '000400'
               owner: root
               group: root
@@ -158,51 +247,77 @@ Resources:
                 files:
                   - /etc/cfn/cfn-hup.conf
                   - /etc/cfn/hooks.d/cfn-auto-reloader.conf
-        install_efs:
-          commands:
-            01_install_efs:
-              command: |
-                # Mount shared EFS
-                yum -y install amazon-efs-utils
-                AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
-                AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
-                export AWS_DEFAULT_REGION=$AWSREGION
-                EFSID=$(aws ssm get-parameter --name "/efs/filesystem/id" | jq -r ".Parameter.Value")
-                EFSIPAZA=$(aws ssm get-parameter --name "/efs/mounttarget/a/ip" | jq -r ".Parameter.Value")
-                EFSIPAZB=$(aws ssm get-parameter --name "/efs/mounttarget/b/ip" | jq -r ".Parameter.Value")
-                # Determine which az
-                if [[ "$AZ" =~ 'a'$ ]]; then EFSIP=$EFSIPAZA; elif [[ "$AZ" =~ 'b'$ ]]; then EFSIP=$EFSIPAZB; else EFSIP="0.0.0.0"; fi
-                # Since DNS lookup of EFS does not work, will have to provide hosts entry for that
-                echo -e "$EFSIP\t$EFSID.efs.$AWSREGION.amazonaws.com\t# Shared EFS" >> /etc/hosts
-                mkdir -p /var/www/html
-                mount -t efs $EFSID /var/www/html
-                usermod -a -G apache ec2-user
-                chown -R ec2-user:apache /var/www/html
-                chmod 2775 /var/www/html && find /var/www/html -type d -exec sudo chmod 2775 {} \;
-                find /var/www/html -type f -exec sudo chmod 0664 {} \;
-                # Persist the volume in /etc/fstab so it gets mounted again
-                echo -e '$EFSID\t/var/www/html\tefs\t_netdev\t0 2' >> /etc/fstab
-                
         install_wordpress:
           sources:
             /var/www/html: 'http://wordpress.org/latest.tar.gz'
-
+          files:
+            /tmp/create-wp-config:
+              content: !Sub
+                  - |
+                    #!/bin/bash -xe
+                    sudo wget -P /usr/bin https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+                    cd /usr/bin
+                    sudo chmod +x wp-cli.phar
+                    sudo mv wp-cli.phar /usr/bin/wp
+                    sudo wget -P /var/www/html https://wordpress.org/latest.tar.gz
+                    cd /var/www/html
+                    sudo tar -vxzf latest.tar.gz -C /var/www/html
+                    sudo cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                    cd /var/www/html/wordpress/
+                    AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
+                    export AWS_DEFAULT_REGION=$AWSREGION
+                    DBNAME=$(aws ssm get-parameter --name "/rds/mysql/main/name" | jq -r ".Parameter.Value")
+                    dbusername=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]')
+                    dbpassword=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["password"]')
+                    wpusername=$(aws secretsmanager get-secret-value --secret-id "WordpressPassword" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]')
+                    export wpuser=$wpusername
+                    wppassword=$(aws secretsmanager get-secret-value --secret-id "WordpressPassword" --output text --query SecretString --region "$AWSREGION" | jq -r '.["password"]')
+                    export wppas=$wppassword
+                    wpemail=$(aws secretsmanager get-secret-value --secret-id "WordpressEmail" --output text --query SecretString --region "$AWSREGION" | jq -r '.["email"]')
+                    export wpemail2=$wpemail
+                    hostendpoint=$(aws ssm get-parameter --name "/rds/mysql/main/address" | jq -r ".Parameter.Value")
+                    s3bucketname=$(aws ssm get-parameter --name "/s3/private/name" --region "$AWSREGION"| jq -r ".Parameter.Value")
+                    export bucketname=$s3bucketname
+                    sed -i "s/database_name_here/$DBNAME/g" wp-config.php
+                    sed -i "s/'username_here'/'$dbusername'/g" wp-config.php
+                    sed -i "s/'password_here'/'$dbpassword'/g" wp-config.php
+                    sed -i "s/'localhost'/'$hostendpoint'/g" wp-config.php
+                    if ! $(wp core is-installed --allow-root); then
+                        wp core install --url="${WPDomainName}" --title='Wordpress on AWS' --admin_user="$wpuser" --admin_password="$wppas" --allow-root --admin_email="$wpemail2"
+                        sudo chown -R apache:apache /var/www/html/wordpress
+                        sudo chmod u+wrx /var/www/html/wordpress/wp-content/*
+                    fi
+                    RESULT=$?
+                    echo $RESULT
+                    if [ $RESULT -eq 0 ]; then
+                        touch /var/www/html/wordpress/wordpress.initialized
+                    else
+                        touch /var/www/html/wordpress/wordpress.failed
+                    fi
+                    sed -i "/*.Add any custom values between this line and the.*/a /* SSL Settings */\ndefine(""'""FORCE_SSL_ADMIN""'"", true);\n \n/* Turn HTTPS ""'""on""'"" if HTTP_X_FORWARDED_PROTO matches ""'""https""'"" */\nif (strpos(""$""_SERVER[""'""HTTP_X_FORWARDED_PROTO""'""], ""'""https""'"") !== false) {\n    ""$""_SERVER[""'""HTTPS""'""] = ""'""on""'"";\n}" wp-config.php
+                    cat <<EOF >/etc/httpd/conf.d/wordpress.conf
+                    ServerName 127.0.0.1:80
+                    DocumentRoot /var/www/html/wordpress
+                    <Directory /var/www/html/wordpress>
+                      Options Indexes FollowSymLinks
+                      AllowOverride All
+                      Require all granted
+                    </Directory>
+                    EOF
+                    if [ -z "$(aws s3 ls s3://"$bucketname"/wp-includes)" ]; then
+                      aws s3 cp --recursive /var/www/html/wordpress/wp-includes s3://"$bucketname"/wp-includes
+                      aws s3 cp --recursive /var/www/html/wordpress/wp-content s3://"$bucketname"/wp-content
+                    else
+                      echo "it exists"
+                    fi
+                    aws sns publish --topic-arn ${SNSTOPICARN} --message "EC2 is ready"
+                  - SNSTOPICARN: !Ref SNSTopic
+              mode: '000500'
+              owner: root
+              group: root
           commands:
             01_configure_wordpress:
-              command: |
-                curl -o /bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-                chmod +x /bin/wp
-                AWSREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq .region -r)
-                export AWS_DEFAULT_REGION=$AWSREGION
-                DBNAME=$(aws ssm get-parameter --name "/rds/mysql/main/name" | jq -r ".Parameter.Value")
-                DBUSER=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["username"]' )
-                DBPASS=$(aws secretsmanager get-secret-value --secret-id "MySecretForDBtestdb" --output text --query SecretString --region "$AWSREGION" | jq -r '.["password"]' )
-                DBENDPOINT=$(aws ssm get-parameter --name "/rds/mysql/main/address" | jq -r ".Parameter.Value")
-                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
-                sed -i "s/username_here/$DBUSER/g" wp-config.php
-                sed -i "s/database_name_here/$DBNAME/g" wp-config.php
-                sed -i "s/password_here/$DBPASS/g" wp-config.php
-                sed -i "s/localhost/$DBENDPOINT/g" wp-config.php
+              command: /tmp/create-wp-config
               cwd: /var/www/html/wordpress
           services:
             sysvinit:
@@ -212,27 +327,23 @@ Resources:
     Properties:
       LaunchTemplateName: LaunchTemplate
       LaunchTemplateData:
-        IamInstanceProfile:
-          Name: '{{resolve:ssm:/iam/instanceprofile/name}}'
         DisableApiTermination: false
         ImageId: !Ref AMI
         InstanceType: !Ref InstanceType
-#        KeyName: MyKeyPair
+        IamInstanceProfile:
+          Name: '{{resolve:ssm:/iam/instanceprofile/name}}'
         SecurityGroupIds:
           - !Ref InstanceSecurityGroup
         UserData:
           Fn::Base64:
             !Sub |
-              #!/bin/bash
+              #!/bin/bash -xe
               yum update -y
-              yum install -y amazon-linux-extras
-              yum install -y awslogs httpd mysql gcc-c++ jq php-mysqlnd.x86_64
               amazon-linux-extras enable php7.4
-              yum clean metadata
-              yum install -y php php-{pear,cgi,common,curl,mbstring,gd,gettext,bcmath,json,xml,fpm,intl,zip,imap,devel,opcache}
-              #systemctl enable nfs-server.service
-              #yum install -y jq httpd php-mysqlnd php-cli
-              /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --region ${AWS::Region} --resource LaunchTemplate --configsets wordpress_install
+              yum install -y php
+              yum install -y httpd php-mysqlnd.x86_64
+              /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchTemplate --region ${AWS::Region} --configsets wordpress_install
+              echo test
   #########################################################################
   # Load Balancer Configuration
   #########################################################################
