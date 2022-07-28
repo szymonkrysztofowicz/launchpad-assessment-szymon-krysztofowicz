@@ -107,6 +107,7 @@ jobs:
             WordpressUser=WordpressAdmin,
             WordpressEmail=admin@wordpress.com,
             WPDomainName=team4.nordcloudtap.com
+<<<<<<< HEAD
 
       - name: Output for ALB DNS Name
         id: DNS 
@@ -118,3 +119,5 @@ jobs:
           PublicAlbDnsName: ${{ steps.instance-stack.outputs.LoadBalancerDNSName }}
           PublicS3DnsName: ${{ steps.s3.outputs.S3BucketPublicDNSName }}
           PublicS3Name: ${{ steps.s3.outputs.S3BucketName }}
+=======
+>>>>>>> b8b433783c41a336c7441a52b6673af6f3ae3c63
