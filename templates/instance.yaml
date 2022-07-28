@@ -411,7 +411,7 @@ Resources:
       MaxSize: !Ref MaxInstances
       MinSize: !Ref MinInstances
 #       HealthCheckType: ELB
-      HealthCheckGracePeriod: 300
+      HealthCheckGracePeriod: 400
       TargetGroupARNs:
         - !Ref AppElasticLoadBalancerTargetGroup
       DesiredCapacity: !Ref DesiredInstances
