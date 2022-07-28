@@ -570,3 +570,10 @@ Resources:
 #             EvaluateTargetHealth: false
 #             HostedZoneId: !GetAtt AppElasticLoadBalancer.CanonicalHostedZoneID
 #             DNSName: !GetAtt AppElasticLoadBalancer.DNSName
+#######################################################################
+ # Outputs
+#######################################################################
+Outputs:
+  LoadBalancerDNSName:
+    Description: The DNSName of the backup load balancer
+    Value: !GetAtt AppElasticLoadBalancer.DNSName
