@@ -26,6 +26,8 @@ Metadata:
         default: Domain name of the WordPress site
       S3BucketName:
         default: S3 Bucket
+      S3BucketDNS:
+        default: S3 Bucket DNS Name
       ALBHostedZone:
         default: ALB Hosted Zone
 ######################################################################
