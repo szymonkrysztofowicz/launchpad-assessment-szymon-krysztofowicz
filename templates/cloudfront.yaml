@@ -11,13 +11,13 @@ Metadata:
     - Label:
         default: AWS Parameters
       Parameters:
-        - CloudFrontAcmCertificate
+        - ARNCertificate
         - WPDomainName
         - PublicAlbDnsName
         - S3Bucket
         - ALBHostedZone
     ParameterLabels:
-      CloudFrontAcmCertificate:
+      ARNCertificate:
         default: CloudFront Certificate ARN
       PublicAlbDnsName:
         default: Public ALB DNS Name
@@ -32,7 +32,7 @@ Metadata:
 ######################################################################
 Parameters:
 
-  CloudFrontAcmCertificate:
+  ARNCertificate:
     AllowedPattern: ^$|(arn:aws:acm:)([a-z0-9/:-])*([a-z0-9])$
     Description: '[ Optional ] The AWS Certification Manager certificate ARN for the CloudFront distribution certificate - this certificate should be created in the us-east-1 (N. Virginia) region and must reference the WordPress domain name you use below.'
     Type: String
