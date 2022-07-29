@@ -97,7 +97,7 @@ Resources:
 # Outputs
 ######################################################################
 Outputs:
-  S3BucketPublicDNSName:
+  S3BucketDNS:
     Description: The DNS Name of the S3 Public Bucket
     Value: !GetAtt S3Bucket.RegionalDomainName
 
