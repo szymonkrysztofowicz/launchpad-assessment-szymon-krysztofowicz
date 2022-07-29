@@ -8,6 +8,7 @@ Instruction of deployment:
 3. Provide SSL Certificate for Application Load Balancer in .github/workflows/deploy.yaml (line 106)
 4. Provide SSL Certificate for CloudFront in .github/workflows/deploy.yaml (line 157)
 5. Provide WPDomain parameter for instance-stack job in .github/workflows/deploy.yaml associated with previously created certificate (line 110 and 156)
+6. Provide your email address for SNS topic in instance.yaml (line 509)
 
 Resources that will be created using this solution:
 - VPC
