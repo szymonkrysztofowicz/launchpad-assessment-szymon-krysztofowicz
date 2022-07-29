@@ -117,7 +117,7 @@ jobs:
           echo "::set-output name=S3Name::$PublicS3Name"
         env:
           PublicAlbDnsName: ${{ steps.instance-stack.outputs.LoadBalancerDNSName }}
-          PublicS3DnsName: ${{ steps.s3.outputs.S3BucketPublicDNSName }}
+          PublicS3DnsName: ${{ steps.s3.outputs.S3BucketDNS }}
           PublicS3Name: ${{ steps.s3.outputs.S3BucketName }}
 
       - name: Output for ALB Hosted Zone
