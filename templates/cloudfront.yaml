@@ -207,10 +207,10 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity:
                 !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOriginAccessIdentity]]
-          - DomainName: !Ref PublicAlbDnsName
-            Id: alb
-            CustomOriginConfig:
-              OriginProtocolPolicy: https-only
+          # - DomainName: !Ref PublicAlbDnsName
+          #   Id: alb
+          #   CustomOriginConfig:
+          #     OriginProtocolPolicy: https-only
         PriceClass: PriceClass_100
         ViewerCertificate:
           AcmCertificateArn: !Ref ARNCertificate
