@@ -223,18 +223,18 @@ Resources:
       CloudFrontOriginAccessIdentityConfig:
         Comment: 'CloudFront OAI for domainname'
 
-  BucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref S3BucketName
-      PolicyDocument:
-        Statement:
-          - Action:
-              - s3:GetObject
-            Effect: Allow
-            Resource: !Join ['', ['arn:aws:s3:::', !Ref S3BucketName, '/*']]
-            Principal:
-              CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+  # BucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   Properties:
+  #     Bucket: !Ref S3BucketName
+  #     PolicyDocument:
+  #       Statement:
+  #         - Action:
+  #             - s3:GetObject
+  #           Effect: Allow
+  #           Resource: !Join ['', ['arn:aws:s3:::', !Ref S3BucketName, '/*']]
+  #           Principal:
+  #             CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
 #### DNS Record pointing on Cloudfront distribution
   DNSRecord:
     Type: AWS::Route53::RecordSetGroup
