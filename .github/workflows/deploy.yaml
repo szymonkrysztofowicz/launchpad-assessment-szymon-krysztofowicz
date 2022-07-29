@@ -119,7 +119,6 @@ jobs:
           PublicAlbDnsName: ${{ steps.instance-stack.outputs.LoadBalancerDNSName }}
           PublicS3DnsName: ${{ steps.s3.outputs.S3BucketPublicDNSName }}
           PublicS3Name: ${{ steps.s3.outputs.S3BucketName }}
-<<<<<<< HEAD
 
       - name: Output for ALB Hosted Zone
         id: HostedZone 
@@ -128,5 +127,35 @@ jobs:
         env:
           ALBHostedZone: ${{ steps.instance-stack.outputs.LoadBalancerHostedZone }}
 
-=======
->>>>>>> 55aca1b70b68e4520beb198b6a1684fb4c62fe9c
+  deploy2:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    needs: deploy
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout code from master branch
+        uses: actions/checkout@v2
+
+      # Configure AWS Credential
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.ACCESS_KEY_SECRET }}
+          aws-region: us-east-1
+      # Deploy to AWS CloudFormation
+      - name: Deploy to AWS CloudFormation cloudfront template
+        id: CDN
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: assessment-cloudfront-stack
+          template: templates/cloudfront.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            WPDomainName=team4.nordcloudtap.com, 
+            ARNCertificate=arn:aws:acm:us-east-1:735556469799:certificate/02b809f4-8be6-425d-ba8b-4fca36e3d3cf,
+            PublicAlbDnsName=${{ needs.deploy.outputs.output1 }},
+            S3BucketDNS=${{ needs.deploy.outputs.output2 }},
+            S3BucketName=${{ needs.deploy.outputs.output3 }}
+            ALBHostedZone${{ needs.deploy.outputs.output4 }}
