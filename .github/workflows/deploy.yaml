@@ -119,7 +119,6 @@ jobs:
           PublicAlbDnsName: ${{ steps.instance-stack.outputs.LoadBalancerDNSName }}
           PublicS3DnsName: ${{ steps.s3.outputs.S3BucketPublicDNSName }}
           PublicS3Name: ${{ steps.s3.outputs.S3BucketName }}
-<<<<<<< HEAD
 
       - name: Output for ALB Hosted Zone
         id: HostedZone 
@@ -127,6 +126,3 @@ jobs:
           echo "::set-output name=ALBHZ::$ALBHostedZone"
         env:
           ALBHostedZone: ${{ steps.instance-stack.outputs.LoadBalancerHostedZone }}
-
-=======
->>>>>>> 55aca1b70b68e4520beb198b6a1684fb4c62fe9c
