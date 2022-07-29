@@ -14,7 +14,7 @@ Metadata:
         - ARNCertificate
         - WPDomainName
         - PublicAlbDnsName
-        - S3Bucket
+        - S3BucketName
         - ALBHostedZone
     ParameterLabels:
       ARNCertificate:
@@ -23,7 +23,7 @@ Metadata:
         default: Public ALB DNS Name
       WPDomainName:
         default: Domain name of the WordPress site
-      S3Bucket:
+      S3BucketName:
         default: S3 Bucket
       ALBHostedZone:
         default: ALB Hosted Zone
@@ -43,7 +43,7 @@ Parameters:
     AllowedPattern: ^$|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$
     Description: 'The main domain name of the WordPress site (e.g. example.com).'
     Type: String
-  S3Bucket:
+  S3BucketName:
     Description: S3Bucket Name static assets
     Type: String
   ALBHostedZone:
