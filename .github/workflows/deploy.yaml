@@ -126,7 +126,6 @@ jobs:
           echo "::set-output name=ALBHZ::$ALBHostedZone"
         env:
           ALBHostedZone: ${{ steps.instance-stack.outputs.LoadBalancerHostedZone }}
-<<<<<<< HEAD
 
   deploy2:
     # The type of runner that the job will run on
@@ -158,7 +157,5 @@ jobs:
             ARNCertificate=arn:aws:acm:us-east-1:735556469799:certificate/02b809f4-8be6-425d-ba8b-4fca36e3d3cf,
             PublicAlbDnsName=${{ needs.deploy.outputs.output1 }},
             S3BucketDNS=${{ needs.deploy.outputs.output2 }},
-            S3BucketName=${{ needs.deploy.outputs.output3 }}
+            S3BucketName=${{ needs.deploy.outputs.output3 }},
             ALBHostedZone${{ needs.deploy.outputs.output4 }}
-=======
->>>>>>> b28ea1a990e7fddf531162089d0e81a089890933
