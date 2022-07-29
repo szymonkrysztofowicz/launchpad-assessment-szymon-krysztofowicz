@@ -14,6 +14,7 @@ jobs:
       output1: ${{ steps.DNS.outputs.ALB }}
       output2: ${{ steps.DNS.outputs.S3DNS }}
       output3: ${{ steps.DNS.outputs.S3Name }}
+      output4: ${{ steps.HostedZone.outputs.ALBHZ }}
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -107,7 +108,6 @@ jobs:
             WordpressUser=WordpressAdmin,
             WordpressEmail=admin@wordpress.com,
             WPDomainName=team4.nordcloudtap.com
-<<<<<<< HEAD
 
       - name: Output for ALB DNS Name
         id: DNS 
@@ -119,5 +119,11 @@ jobs:
           PublicAlbDnsName: ${{ steps.instance-stack.outputs.LoadBalancerDNSName }}
           PublicS3DnsName: ${{ steps.s3.outputs.S3BucketPublicDNSName }}
           PublicS3Name: ${{ steps.s3.outputs.S3BucketName }}
-=======
->>>>>>> b8b433783c41a336c7441a52b6673af6f3ae3c63
+
+      - name: Output for ALB Hosted Zone
+        id: HostedZone 
+        run: |
+          echo "::set-output name=ALBHZ::$ALBHostedZone"
+        env:
+          ALBHostedZone: ${{ steps.instance-stack.outputs.LoadBalancerHostedZone }}
+

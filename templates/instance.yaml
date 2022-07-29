@@ -577,3 +577,7 @@ Outputs:
   LoadBalancerDNSName:
     Description: The DNSName of the backup load balancer
     Value: !GetAtt AppElasticLoadBalancer.DNSName
+  
+  LoadBalancerHostedZone:
+    Description: Hosted Zone of load Balancer
+    Value: !GetAtt AppElasticLoadBalancer.CanonicalHostedZoneID
