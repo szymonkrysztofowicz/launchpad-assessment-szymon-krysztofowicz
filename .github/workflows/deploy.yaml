@@ -158,4 +158,4 @@ jobs:
             PublicAlbDnsName=${{ needs.deploy.outputs.output1 }},
             S3BucketDNS=${{ needs.deploy.outputs.output2 }},
             S3BucketName=${{ needs.deploy.outputs.output3 }},
-            ALBHostedZone${{ needs.deploy.outputs.output4 }}
+            ALBHostedZone=${{ needs.deploy.outputs.output4 }}
