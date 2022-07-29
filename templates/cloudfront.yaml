@@ -49,6 +49,9 @@ Parameters:
   S3BucketName:
     Description: S3Bucket Name static assets
     Type: String
+  S3BucketDNS:
+    Description: S3Bucket DNS Name static assets
+    Type: String
   ALBHostedZone:
     Description: Application Load Balancer Hosted Zone
     Type: String
