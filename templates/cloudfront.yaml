@@ -15,6 +15,7 @@ Metadata:
         - WPDomainName
         - PublicAlbDnsName
         - S3Bucket
+        - ALBHostedZone
     ParameterLabels:
       CloudFrontAcmCertificate:
         default: CloudFront Certificate ARN
@@ -24,6 +25,8 @@ Metadata:
         default: Domain name of the WordPress site
       S3Bucket:
         default: S3 Bucket
+      ALBHostedZone:
+        default: ALB Hosted Zone
 ######################################################################
 # Parameters
 ######################################################################
